@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Territory Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #22c55e;
+    --green-dark: #16a34a;
+    --green-dim: rgba(34,197,94,0.15);
+    --green-glow: rgba(34,197,94,0.4);
+    --bg: #0a0f0a;
+    --bg2: #111811;
+    --bg3: #182018;
+    --panel: #0f160f;
+    --border: rgba(34,197,94,0.18);
+    --border-strong: rgba(34,197,94,0.4);
+    --text: #e8f5e8;
+    --text-muted: #6b8f6b;
+    --text-dim: #3d5c3d;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --radius: 6px;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); }
+
+  body {
+    font-family: 'Barlow', sans-serif;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    height: 52px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 1000;
+    position: relative;
+  }
+
+  .logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+  .logo span { color: var(--text-muted); font-weight: 400; }
+
+  .header-stats {
+    display: flex;
+    gap: 28px;
+    align-items: center;
+  }
+
+  .hstat {
+    text-align: center;
+  }
+  .hstat-val {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+  }
+  .hstat-lbl {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ── LAYOUT ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── MAP ── */
+  #map {
+    flex: 1;
+    z-index: 1;
+    background: #0a100a;
+  }
+
+  .leaflet-tile-pane { filter: saturate(0.3) brightness(0.45) hue-rotate(80deg); }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .sidebar-section {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  /* ── RUN CONTROLS ── */
+  .btn-run {
+    width: 100%;
+    height: 52px;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-run.start {
+    background: var(--green);
+    color: #0a0f0a;
+  }
+  .btn-run.start:hover { background: #16a34a; transform: translateY(-1px); }
+
+  .btn-run.stop {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+    animation: pulse-border 2s ease-in-out infinite;
+  }
+  .btn-run.stop:hover { background: rgba(239,68,68,0.1); }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: var(--red); box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { border-color: #f87171; box-shadow: 0 0 12px 2px rgba(239,68,68,0.25); }
+  }
+
+  .btn-locate {
+    width: 100%;
+    height: 38px;
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .btn-locate:hover { border-color: var(--border-strong); color: var(--text); background: var(--bg3); }
+
+  /* ── LIVE STATS ── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+
+  .stat-card.full { grid-column: 1 / -1; }
+
+  .stat-val {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+  }
+
+  .stat-val.amber { color: var(--amber); }
+  .stat-val.red { color: var(--red); }
+
+  .stat-lbl {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── STATUS INDICATOR ── */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .status-dot.active {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  .status-dot.saving { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .status-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+  }
+
+  /* ── RUN LOG ── */
+  .run-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .run-log::-webkit-scrollbar { width: 4px; }
+  .run-log::-webkit-scrollbar-track { background: transparent; }
+  .run-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .run-log-header {
+    padding: 14px 20px 10px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    z-index: 2;
+  }
+
+  .run-item {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .run-item:hover { background: var(--bg3); }
+
+  .run-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+
+  .run-item-date {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .run-item-area {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+  }
+
+  .run-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .run-empty {
+    padding: 32px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.8;
+  }
+
+  /* ── GPS PATH LINE (Leaflet) ── */
+  .live-path { stroke: #22c55e; stroke-opacity: 0.9; stroke-width: 3; fill: none; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--bg2);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 10px 20px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    z-index: 9999;
+    transition: transform 0.3s;
+    white-space: nowrap;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── EMULATION PANEL ── */
+  .emu-panel {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-top: 10px;
+  }
+
+  .emu-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .emu-badge {
+    background: rgba(245,158,11,0.2);
+    color: var(--amber);
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .emu-select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 7px 10px;
+    font-size: 12px;
+    font-family: 'Barlow', sans-serif;
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+
+  .emu-select option { background: var(--bg); }
+
+  .btn-emu {
+    width: 100%;
+    height: 32px;
+    background: rgba(245,158,11,0.12);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: var(--radius);
+    color: var(--amber);
+    font-size: 12px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-emu:hover { background: rgba(245,158,11,0.2); }
+
+  /* ── LEAFLET OVERRIDES ── */
+  .leaflet-control-attribution { display: none; }
+  .leaflet-control-zoom a {
+    background: var(--bg2) !important;
+    color: var(--green) !important;
+    border-color: var(--border) !important;
+  }
+
+  /* ── ACCURACY RING ── */
+  .acc-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  /* ── GPS icon on map ── */
+  .gps-marker-inner {
+    width: 14px;
+    height: 14px;
+    background: var(--green);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--green-glow);
+  }
+
+  /* ── TERRITORY SCORE ── */
+  .territory-bar {
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .territory-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), #4ade80);
+    transition: width 0.5s ease;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Territory<span>Runner</span></div>
+  <div class="header-stats">
+    <div class="hstat">
+      <div class="hstat-val" id="h-runs">0</div>
+      <div class="hstat-lbl">Total Runs</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="h-area">0</div>
+      <div class="hstat-lbl">km² Claimed</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="h-dist">0.0</div>
+      <div class="hstat-lbl">km Covered</div>
+    </div>
+  </div>
+  
+  <a href="/logout" style="text-decoration: none;">
+      <button style="background: transparent; border: 1px solid rgba(34,197,94,0.18); color: #6b8f6b; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">Logout</button>
+  </a>
+
+</header>
+
+<div class="main">
+  <div id="map"></div>
+
+  <div class="sidebar">
+    <!-- Controls -->
+    <div class="sidebar-section">
+      <div class="status-row">
+        <div class="status-dot" id="status-dot"></div>
+        <div class="status-text" id="status-text">Ready to run</div>
+      </div>
+
+      <button class="btn-run start" id="btn-run" onclick="toggleRun()">
+        ▶ Start Run
+      </button>
+      <button class="btn-locate" onclick="locateMe()">⊕ Center on My Location</button>
+
+      <!-- GPS Emulation -->
+      <div class="emu-panel">
+        <div class="emu-label">
+          GPS Emulation
+          <span class="emu-badge">Dev Mode</span>
+        </div>
+        <select class="emu-select" id="emu-route">
+          <option value="loop">City Block Loop (~1.2km)</option>
+          <option value="park">Park Trail (~2.5km)</option>
+          <option value="grid">Grid Explorer (~3km)</option>
+          <option value="zigzag">Zigzag Alley (~1.8km)</option>
+        </select>
+        <button class="btn-emu" onclick="runEmulation()">▶ Simulate Route</button>
+      </div>
+    </div>
+
+    <!-- Live Stats -->
+    <div class="sidebar-section">
+      <div class="section-label">Live Stats</div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-dist">0.00</div>
+          <div class="stat-lbl">Distance km</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-time">00:00</div>
+          <div class="stat-lbl">Duration</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val amber" id="stat-pace">—</div>
+          <div class="stat-lbl">Pace /km</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-pts">0</div>
+          <div class="stat-lbl">GPS Points</div>
+        </div>
+        <div class="stat-card full">
+          <div class="stat-val" id="stat-area">0.000</div>
+          <div class="stat-lbl">Territory Claimed km²</div>
+          <div class="territory-bar">
+            <div class="territory-fill" id="territory-bar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="acc-label" id="acc-label">Accuracy: —</div>
+    </div>
+
+    <!-- Run log -->
+    <div class="run-log-header">Run History</div>
+    <div class="run-log" id="run-log">
+      <div class="run-empty" id="run-empty">
+        No territories claimed yet.<br>Start a run to paint the map.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────
+const state = {
+  running: false,
+  path: [],           // [[lat, lng], ...]
+  startTime: null,
+  watchId: null,
+  timerInterval: null,
+  emuInterval: null,
+  runs: [],           // saved run objects
+  totalDist: 0,
+  marker: null,
+  pathLayer: null,
+  territories: [],    // Leaflet GeoJSON layers
+};
+
+// ── MAP INIT ──────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [30.9, 75.85],  // default center (Ludhiana, Punjab)
+  zoom: 14,
+  zoomControl: true,
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+}).addTo(map);
+
+// Custom GPS marker
+const gpsIcon = L.divIcon({
+  className: '',
+  html: '<div class="gps-marker-inner"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
+
+state.marker = L.marker([30.9, 75.85], { icon: gpsIcon }).addTo(map);
+
+// ── GEOLOCATION HELPERS ─────────────────────────────────────────
+function startWatchingGPS() {
+  if (!navigator.geolocation) {
+    toast('GPS not supported — use emulation mode');
+    return;
+  }
+  state.watchId = navigator.geolocation.watchPosition(
+    onGPSUpdate,
+    (err) => toast('GPS error: ' + err.message),
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+  );
+}
+
+function stopWatchingGPS() {
+  if (state.watchId !== null) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
+}
+
+function onGPSUpdate(pos) {
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const acc = pos.coords.accuracy;
+
+  updatePosition(lat, lng, acc);
+}
+
+function updatePosition(lat, lng, acc) {
+  // Move marker
+  state.marker.setLatLng([lat, lng]);
+
+  // Add to path if running
+  if (state.running) {
+    state.path.push([lat, lng]);
+    drawLivePath();
+    updateLiveStats();
+  }
+
+  // Accuracy display
+  document.getElementById('acc-label').textContent =
+    acc != null ? `Accuracy: ±${Math.round(acc)}m` : '';
+}
+
+// ── PATH DRAWING ────────────────────────────────────────────────
+function drawLivePath() {
+  if (state.pathLayer) map.removeLayer(state.pathLayer);
+  if (state.path.length < 2) return;
+  state.pathLayer = L.polyline(state.path, {
+    color: '#22c55e',
+    weight: 3,
+    opacity: 0.9,
+    dashArray: null,
+  }).addTo(map);
+}
+
+// ── TOGGLE RUN ──────────────────────────────────────────────────
+function toggleRun() {
+  if (!state.running) beginRun();
+  else endRun();
+}
+
+function beginRun() {
+  state.running = true;
+  state.path = [];
+  state.startTime = Date.now();
+
+  document.getElementById('btn-run').className = 'btn-run stop';
+  document.getElementById('btn-run').textContent = '■ Stop & Claim';
+  setStatus('active', 'Tracking GPS...');
+
+  // Timer
+  state.timerInterval = setInterval(updateTimer, 1000);
+
+  // Real GPS
+  startWatchingGPS();
+
+  toast('Run started — go explore!');
+}
+
+function endRun() {
+  state.running = false;
+  stopWatchingGPS();
+  clearInterval(state.timerInterval);
+  if (state.emuInterval) { clearInterval(state.emuInterval); state.emuInterval = null; }
+
+  document.getElementById('btn-run').className = 'btn-run start';
+  document.getElementById('btn-run').textContent = '▶ Start Run';
+
+  if (state.path.length < 3) {
+    setStatus('idle', 'Ready to run');
+    toast('Run too short to claim territory');
+    return;
+  }
+
+  setStatus('saving', 'Saving territory...');
+  claimTerritory();
+}
+
+// ── TURF BUFFERING (core GIS logic) ─────────────────────────────
+function claimTerritory() {
+  try {
+    // Convert [lat,lng] → GeoJSON [lng,lat]
+    const coords = state.path.map(([lat, lng]) => [lng, lat]);
+
+    if (coords.length < 2) {
+      toast('Not enough points to buffer');
+      setStatus('idle', 'Ready to run');
+      return;
+    }
+
+    // Remove duplicate consecutive points
+    const unique = [coords[0]];
+    for (let i = 1; i < coords.length; i++) {
+      const [px, py] = unique[unique.length - 1];
+      const [cx, cy] = coords[i];
+      if (Math.abs(cx - px) > 0.000001 || Math.abs(cy - py) > 0.000001) {
+        unique.push(coords[i]);
+      }
+    }
+
+    if (unique.length < 2) {
+      toast('Points too close — explore more area');
+      setStatus('idle', 'Ready to run');
+      return;
+    }
+
+    const line = turf.lineString(unique);
+    const buffered = turf.buffer(line, 0.05, { units: 'kilometers' });
+
+    // Calculate stats
+    const dist = turf.length(line, { units: 'kilometers' });
+    const area = turf.area(buffered) / 1_000_000; // km²
+    const elapsed = (Date.now() - state.startTime) / 1000;
+
+    // Render on map
+    renderTerritory(buffered, state.path.length);
+
+    // Save run
+    const run = {
+      id: Date.now(),
+      date: new Date(),
+      distKm: dist,
+      areaKm2: area,
+      durationSec: elapsed,
+      points: state.path.length,
+      geojson: buffered,
+    };
+    state.runs.unshift(run);
+    state.totalDist += dist;
+
+    updateHeader();
+    addRunToLog(run);
+    setStatus('idle', 'Territory claimed!');
+    toast(`Territory claimed! +${area.toFixed(4)} km²`);
+
+    // Clear live path layer (territory replaces it)
+    if (state.pathLayer) { map.removeLayer(state.pathLayer); state.pathLayer = null; }
+
+  } catch (e) {
+    console.error('Turf error:', e);
+    toast('Error processing route: ' + e.message);
+    setStatus('idle', 'Ready to run');
+  }
+}
+
+function renderTerritory(geojson, points) {
+  const layer = L.geoJSON(geojson, {
+    style: {
+      color: '#22c55e',
+      fillColor: '#22c55e',
+      fillOpacity: 0.18,
+      weight: 1.5,
+      opacity: 0.7,
+    },
+  }).addTo(map);
+
+  state.territories.push(layer);
+  map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+}
+
+// ── LIVE STAT UPDATES ────────────────────────────────────────────
+function updateLiveStats() {
+  const n = state.path.length;
+  document.getElementById('stat-pts').textContent = n;
+
+  if (n < 2) return;
+
+  // Distance
+  try {
+    const coords = state.path.map(([lat, lng]) => [lng, lat]);
+    const line = turf.lineString(coords.length >= 2 ? coords : [coords[0], coords[0]]);
+    const dist = turf.length(line, { units: 'kilometers' });
+    document.getElementById('stat-dist').textContent = dist.toFixed(2);
+
+    // Buffer area (every 5 points to save perf)
+    if (n % 5 === 0 && coords.length >= 2) {
+      try {
+        const buf = turf.buffer(line, 0.05, { units: 'kilometers' });
+        const area = turf.area(buf) / 1_000_000;
+        document.getElementById('stat-area').textContent = area.toFixed(4);
+        // bar: max 1 km² = 100%
+        const pct = Math.min(area / 1, 1) * 100;
+        document.getElementById('territory-bar').style.width = pct + '%';
+      } catch (_) {}
+    }
+
+    // Pace
+    const elapsed = (Date.now() - state.startTime) / 1000;
+    if (dist > 0.05) {
+      const pace = elapsed / 60 / dist; // min/km
+      const min = Math.floor(pace);
+      const sec = Math.round((pace - min) * 60);
+      document.getElementById('stat-pace').textContent =
+        `${min}:${String(sec).padStart(2, '0')}`;
+    }
+  } catch (_) {}
+}
+
+function updateTimer() {
+  if (!state.startTime) return;
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  document.getElementById('stat-time').textContent =
+    `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function updateHeader() {
+  document.getElementById('h-runs').textContent = state.runs.length;
+  const totalArea = state.runs.reduce((s, r) => s + r.areaKm2, 0);
+  document.getElementById('h-area').textContent = totalArea.toFixed(3);
+  document.getElementById('h-dist').textContent = state.totalDist.toFixed(1);
+}
+
+// ── RUN LOG ─────────────────────────────────────────────────────
+function addRunToLog(run) {
+  document.getElementById('run-empty').style.display = 'none';
+  const log = document.getElementById('run-log');
+
+  const d = run.date;
+  const dateStr = d.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+  const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+
+  const item = document.createElement('div');
+  item.className = 'run-item';
+  item.innerHTML = `
+    <div class="run-item-top">
+      <div class="run-item-date">${dateStr}, ${timeStr}</div>
+      <div class="run-item-area">${run.areaKm2.toFixed(4)} km²</div>
+    </div>
+    <div class="run-item-meta">
+      ${run.distKm.toFixed(2)} km · ${formatDuration(run.durationSec)} · ${run.points} pts
+    </div>
+  `;
+  item.addEventListener('click', () => {
+    const layer = state.territories[state.runs.indexOf(run)];
+    if (layer) map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+  });
+
+  // Insert after header (which is sticky)
+  const header = document.querySelector('.run-log-header');
+  header.after(item);
+}
+
+function formatDuration(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return `${m}m ${s}s`;
+}
+
+// ── EMULATED ROUTES ─────────────────────────────────────────────
+const ROUTES = {
+  loop: () => {
+    // City block square loop from map center
+    const c = map.getCenter();
+    const d = 0.004;
+    return [
+      [c.lat, c.lng],
+      [c.lat + d, c.lng],
+      [c.lat + d, c.lng + d*1.4],
+      [c.lat, c.lng + d*1.4],
+      [c.lat - d*0.5, c.lng + d*0.7],
+      [c.lat, c.lng],
+    ];
+  },
+  park: () => {
+    const c = map.getCenter();
+    const pts = [];
+    for (let i = 0; i <= 24; i++) {
+      const t = (i / 24) * Math.PI * 2;
+      pts.push([c.lat + Math.sin(t) * 0.008, c.lng + Math.cos(t) * 0.012]);
+    }
+    return pts;
+  },
+  grid: () => {
+    const c = map.getCenter();
+    const d = 0.003;
+    const pts = [];
+    for (let col = 0; col < 4; col++) {
+      if (col % 2 === 0) {
+        for (let row = 0; row < 5; row++) pts.push([c.lat + row*d, c.lng + col*d*1.5]);
+      } else {
+        for (let row = 4; row >= 0; row--) pts.push([c.lat + row*d, c.lng + col*d*1.5]);
+      }
+    }
+    return pts;
+  },
+  zigzag: () => {
+    const c = map.getCenter();
+    const pts = [];
+    for (let i = 0; i < 20; i++) {
+      const x = i * 0.001;
+      const y = (i % 2 === 0 ? 1 : -1) * 0.003;
+      pts.push([c.lat + y, c.lng + x]);
+    }
+    return pts;
+  },
+};
+
+function runEmulation() {
+  if (state.running) { toast('Stop current run first'); return; }
+
+  const routeKey = document.getElementById('emu-route').value;
+  const waypoints = ROUTES[routeKey]();
+
+  // Begin run
+  beginRun();
+  stopWatchingGPS(); // use emulated GPS instead
+
+  let i = 0;
+  state.emuInterval = setInterval(() => {
+    if (i >= waypoints.length) {
+      clearInterval(state.emuInterval);
+      state.emuInterval = null;
+      endRun();
+      return;
+    }
+    const [lat, lng] = waypoints[i];
+    // Interpolate to make it smooth
+    const sub = i < waypoints.length - 1 ? 6 : 1;
+    if (i < waypoints.length - 1) {
+      const [nlat, nlng] = waypoints[i + 1];
+      for (let s = 0; s < sub; s++) {
+        const t = s / sub;
+        const ilat = lat + (nlat - lat) * t;
+        const ilng = lng + (nlng - lng) * t;
+        state.path.push([ilat, ilng]);
+      }
+      drawLivePath();
+      updateLiveStats();
+      state.marker.setLatLng([lat, lng]);
+      map.panTo([lat, lng], { animate: true, duration: 0.3 });
+    }
+    i++;
+  }, 300);
+
+  toast('Simulating GPS route...');
+}
+
+// ── LOCATE ME ────────────────────────────────────────────────────
+function locateMe() {
+  if (!navigator.geolocation) { toast('GPS not available'); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      map.setView([lat, lng], 15);
+      state.marker.setLatLng([lat, lng]);
+      toast('Centered on your location');
+    },
+    (err) => toast('Could not get location: ' + err.message),
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+// ── STATUS & TOAST ────────────────────────────────────────────────
+function setStatus(type, text) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  dot.className = 'status-dot ' + (type === 'idle' ? '' : type);
+  txt.textContent = text;
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+// Try to get real GPS on load to center map
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      map.setView([lat, lng], 15);
+      state.marker.setLatLng([lat, lng]);
+    },
+    () => {}, // silent fail
+    { enableHighAccuracy: true, timeout: 6000 }
+  );
+}
+</script>
+</body>
+</html>
